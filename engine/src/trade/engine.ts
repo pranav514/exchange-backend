@@ -1,19 +1,15 @@
 import fs from "fs"; // to store the snapshot
 import { RedisManager } from "../RedisManager";
 import { OrderBook } from "./orderBook";
-import { UserBalance } from "../types/interface";
-import { BASE_CURRENCY, CREATE_ORDER } from "../types/constants";
+import { Fill, Order, UserBalance } from "../types/interface";
+import {
+  BASE_CURRENCY,
+  CANCEL_ORDER,
+  CREATE_ORDER,
+  ORDER_UPDATE,
+  TRADE_ADDED,
+} from "../types/constants";
 import { MessageFromApi } from "../types/MessagefromApi";
-import { throwDeprecation } from "process";
-
-// shot = {
-//     orderbooks {
-
-//     },
-//     balances {
-
-//     }
-// }
 
 export class Engine {
   private orderBooks: OrderBook[] = [];
@@ -53,7 +49,7 @@ export class Engine {
       orderbooks: this.orderBooks.map((o) => o.getSnapshot()),
       balances: Array.from(this.balances.entries()),
     };
-    fs.writeFileSync("/.snaphshot.json", JSON.stringify(shot));
+    fs.writeFileSync("./snapshot.json", JSON.stringify(shot));
   }
 
   process({
@@ -63,7 +59,39 @@ export class Engine {
     message: MessageFromApi;
     clientId: string;
   }) {
-    if (message.type === CREATE_ORDER) {
+    console.log("Balances after init:", this.balances);
+    switch (message.type) {
+      case CREATE_ORDER:
+        try {
+          const { executedQty, fills, orderId } = this.createOrder(
+            message.data.market,
+            message.data.price,
+            message.data.quantity,
+            message.data.side,
+            message.data.userId
+          );
+          RedisManager.getInstance().sendToApi(clientId, {
+            type: "ORDER_PLACED",
+            payload: {
+              orderId,
+              executedQty,
+              fills,
+            },
+          });
+        } catch (e) {
+          console.log(e);
+          RedisManager.getInstance().sendToApi(clientId, {
+            type: "ORDER_CANCELLED",
+            payload: {
+              orderId: "",
+              executedQty: 0,
+              remainingQty: 0,
+            },
+          });
+        }
+        break;
+        case CANCEL_ORDER:
+        
     }
   }
   createOrder(
@@ -88,6 +116,23 @@ export class Engine {
       price,
       quantity
     );
+    const order: Order = {
+      price: Number(price),
+      quantity: Number(quantity),
+      orderId:
+        Math.random().toString(36).substring(2, 15) +
+        Math.random().toString(36).substring(2, 15),
+      filled: 0,
+      side,
+      userId,
+    };
+    const { fills, executedQty } = orderBook.addOrder(order);
+    this.updateBalance(userId, baseAsset, quoteAsset, side, fills, executedQty);
+    this.createDbtrades(fills, market, userId);
+    this.updateDbOrders(order, executedQty, fills, market);
+    this.publisWsDepthUpdates(fills, price, side, market);
+    this.publishWsTrades(fills, userId, market);
+    return { executedQty, fills, orderId: order.orderId };
   }
 
   lockfunds(
@@ -101,9 +146,12 @@ export class Engine {
   ) {
     if (side == "buy") {
       const required_balance = Number(quantity) * Number(price);
+      console.log("required_balance" , required_balance)
+      console.log("look userId here" , userId)
+      console.log("look here: ",this.balances.get(userId)?.[quoteAsset]?.available);
       if (
-        this.balances.get(userId)?.[quoteAsset]?.available ||
-        0 < required_balance
+        (this.balances.get(userId)?.[quoteAsset]?.available ||
+        0 )< required_balance
       ) {
         throw new Error("insufficient balance");
       }
@@ -136,9 +184,166 @@ export class Engine {
       }
     }
   }
+  updateBalance(
+    userId: string,
+    baseAsset: string,
+    quoteAsset: string,
+    side: "buy" | "sell",
+    fills: Fill[],
+    executedQty: number
+  ) {
+    if (side == "buy") {
+      fills.forEach((fill) => {
+        const userBalance = this.balances.get(fill.otherUserId);
+        if (userBalance && userBalance[quoteAsset]?.available !== undefined) {
+          userBalance[quoteAsset].available += fill.qty * Number(fill.price);
+          userBalance[quoteAsset].locked -= fill.qty * Number(fill.price);
+        }
+        if (userBalance && userBalance[baseAsset]?.available != undefined) {
+          userBalance[baseAsset].locked -= fill.qty;
+          userBalance[baseAsset].available += fill.qty;
+        }
+      });
+    } else {
+      fills.forEach((fill) => {
+        const userBalance = this.balances.get(fill.otherUserId);
+        if (userBalance && userBalance[quoteAsset]?.available !== undefined) {
+          userBalance[quoteAsset].available += fill.qty * Number(fill.price);
+          userBalance[quoteAsset].locked -= fill.qty * Number(fill.price);
+        }
+        if (userBalance && userBalance[baseAsset]?.available != undefined) {
+          userBalance[baseAsset].locked -= fill.qty;
+          userBalance[baseAsset].available += fill.qty;
+        }
+      });
+    }
+  }
+
+  createDbtrades(fills: Fill[], market: string, userId: string) {
+    fills.forEach((fill) => {
+      RedisManager.getInstance().pushMessage({
+        type: TRADE_ADDED,
+        data: {
+          market: market,
+          id: fill.tradeId.toString(),
+          isBuyerMaker: fill.otherUserId === userId,
+          price: fill.price,
+          quantity: fill.qty.toString(),
+          quoteQuantity: (fill.qty * Number(fill.price)).toString(),
+          timestamp: Date.now(),
+        },
+      });
+    });
+  }
+
+  publishWsTrades(fills: Fill[], userId: string, market: string) {
+    fills.forEach((fill) => {
+      RedisManager.getInstance().sendToWs(`trade@${market}`, {
+        stream: `trade@${market}`,
+        data: {
+          e: "trade",
+          t: fill.tradeId,
+          m: fill.otherUserId === userId,
+          p: fill.price,
+          q: fill.qty.toString(),
+          s: market,
+        },
+      });
+    });
+  }
+  sendUpdatedDepthAt(price: string, market: string) {
+    const orderbook = this.orderBooks.find((o) => o.ticker() === market);
+    if (!orderbook) {
+      return;
+    }
+    const depth = orderbook.getDepth();
+    const updatedBids = depth?.bids.filter((x) => x[0] === price);
+    const updatedAsks = depth?.asks.filter((x) => x[0] === price);
+
+    RedisManager.getInstance().sendToWs(`depth@${market}`, {
+      stream: `depth@${market}`,
+      data: {
+        a: updatedAsks.length ? updatedAsks : [[price, "0"]],
+        b: updatedBids.length ? updatedBids : [[price, "0"]],
+        e: "depth",
+      },
+    });
+  }
+
+  publisWsDepthUpdates(
+    fills: Fill[],
+    price: string,
+    side: "buy" | "sell",
+    market: string
+  ) {
+    const orderbook = this.orderBooks.find((o) => o.ticker() === market);
+    if (!orderbook) {
+      return;
+    }
+    const depth = orderbook.getDepth();
+    if (side === "buy") {
+      const updatedAsks = depth?.asks.filter((x) =>
+        fills.map((f) => f.price).includes(x[0].toString())
+      );
+      const updatedBid = depth?.bids.find((x) => x[0] === price);
+      console.log("publish ws depth updates");
+      RedisManager.getInstance().sendToWs(`depth@${market}`, {
+        stream: `depth@${market}`,
+        data: {
+          a: updatedAsks,
+          b: updatedBid ? [updatedBid] : [],
+          e: "depth",
+        },
+      });
+    }
+    if (side === "sell") {
+      const updatedBids = depth?.bids.filter((x) =>
+        fills.map((f) => f.price).includes(x[0].toString())
+      );
+      const updatedAsk = depth?.asks.find((x) => x[0] === price);
+      console.log("publish ws depth updates");
+      RedisManager.getInstance().sendToWs(`depth@${market}`, {
+        stream: `depth@${market}`,
+        data: {
+          a: updatedAsk ? [updatedAsk] : [],
+          b: updatedBids,
+          e: "depth",
+        },
+      });
+    }
+  }
+
+  updateDbOrders(
+    order: Order,
+    executedQty: number,
+    fills: Fill[],
+    market: string
+  ) {
+    RedisManager.getInstance().pushMessage({
+      type: ORDER_UPDATE,
+      data: {
+        orderId: order.orderId,
+        exceutedQty: executedQty,
+        market: market,
+        price: order.price.toString(),
+        quantity: order.quantity.toString(),
+        side: order.side,
+      },
+    });
+
+    fills.forEach((fill) => {
+      RedisManager.getInstance().pushMessage({
+        type: ORDER_UPDATE,
+        data: {
+          orderId: fill.markerOrderId,
+          exceutedQty: fill.qty,
+        },
+      });
+    });
+  }
 
   setBaseBalances() {
-    this.balances.set("1", {
+    this.balances.set("029b0e5a-d416-44f2-9be8-c0ad35c52598", {
       [BASE_CURRENCY]: {
         available: 100000000,
         locked: 0,
@@ -149,7 +354,7 @@ export class Engine {
       },
     });
     this.balances.set("2", {
-      BASE_CURRENCY: {
+      [BASE_CURRENCY]: {
         available: 10000000,
         locked: 0,
       },
@@ -159,7 +364,7 @@ export class Engine {
       },
     });
     this.balances.set("5", {
-      BASE_CURRENCY: {
+      [BASE_CURRENCY]: {
         available: 10000000,
         locked: 0,
       },

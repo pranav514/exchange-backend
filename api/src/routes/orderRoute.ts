@@ -11,6 +11,7 @@ router.post('/' , authMiddleware,async (req , res) => {
         if(!market || !price || !quantity || !side || !userId){
              res.status(400).json({msg: "Please enter all fields"});
         }
+        console.log(userId);
         const response = await RedisManager.getInstance().sendAndAwait({
             type  : CREATE_ORDER,
             data: {
@@ -21,6 +22,7 @@ router.post('/' , authMiddleware,async (req , res) => {
                 userId
             }
         })
+        
         res.json(response.payload)
     }catch(error){
         res.status(411).json({
