@@ -9,7 +9,7 @@ export type MessageFromEngine = {
     }
 } | 
 {
-    type : typeof ORDER_PLACED,
+    type : typeof ORDER_PLACED,    
     payload : {
         orderId : string,
         executedQuantity : string,
@@ -39,3 +39,5 @@ export type MessageFromEngine = {
        userId : string
     }
 }
+
+
