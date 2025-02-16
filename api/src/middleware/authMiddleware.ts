@@ -26,7 +26,7 @@ export const authMiddleware = async (
         error: "could not authenticate",
       });
     } else {
-        req.userId = decodedToken;
+        req.userId = decodedToken.id;
       next();
     }
   } catch (error) {
