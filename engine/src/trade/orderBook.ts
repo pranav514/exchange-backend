@@ -8,7 +8,7 @@ export class OrderBook {
     lastTradeId : number;
     currentPrice : number;
 
-    private constructor(baseAsset: string, bids: Order[], asks: Order[], lastTradeId: number, currentPrice: number) {
+     constructor(baseAsset: string, bids: Order[], asks: Order[], lastTradeId: number, currentPrice: number) {
         this.bids = bids;
         this.asks = asks;
         this.baseAsset = baseAsset;
