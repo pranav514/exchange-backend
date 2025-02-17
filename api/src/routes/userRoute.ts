@@ -2,6 +2,8 @@ import { Router } from "express";
 import { prismaclient } from "../config/prismaConfig";
 import { sign } from "jsonwebtoken";
 import { Signin, Signup } from "../types/authuser";
+import { authMiddleware } from "../middleware/authMiddleware";
+import { RedisManager } from "../config/redisManager";
 const router = Router();
 
 
@@ -60,4 +62,18 @@ router.post("/signin", async (req, res): Promise<any> => {
   }
 });
 
+router.post('/onramp' , authMiddleware,async (req , res) => {
+  const userId = req.userId;
+  const amount = req.body.amount;
+  const txnId = req.body.txnId;
+  const response  = await RedisManager.getInstance().sendAndAwait({
+    type : "ON_RAMP",
+    data : {
+      amount,
+      userId,
+      txnId
+    }
+  })
+  res.json(response.payload);
+})
 export default router;

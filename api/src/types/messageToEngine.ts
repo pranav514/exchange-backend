@@ -1,4 +1,4 @@
-import { CANCEL_ORDER, CREATE_ORDER, GET_DEPTH, GET_OPEN_ORDERS, SIDE_BUY, SIDE_SELL } from "./constants"
+import { CANCEL_ORDER, CREATE_ORDER, GET_DEPTH, GET_OPEN_ORDERS, ON_RAMP, SIDE_BUY, SIDE_SELL } from "./constants"
 
 export type MessageToEngine = {
     type : typeof CREATE_ORDER,
@@ -25,5 +25,12 @@ export type MessageToEngine = {
     data : {
         userId : string,
         market : string
+    }
+} | {
+    type : typeof ON_RAMP,
+    data : {
+        amount : string,
+        userId : string,
+        txnId : string
     }
 }
