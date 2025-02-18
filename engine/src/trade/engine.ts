@@ -6,10 +6,12 @@ import {
   BASE_CURRENCY,
   CANCEL_ORDER,
   CREATE_ORDER,
+  GET_OPEN_ORDERS,
   ORDER_UPDATE,
   TRADE_ADDED,
 } from "../types/constants";
 import { MessageFromApi } from "../types/MessagefromApi";
+import { error } from "console";
 
 export class Engine {
   private orderBooks: OrderBook[] = [];
@@ -91,6 +93,80 @@ export class Engine {
         }
         break;
         case CANCEL_ORDER:
+          try{
+
+            const orderId = message.data.orderId;
+            console.log("orderId" , orderId)
+            const cancelMarket = message.data.market;
+            
+            console.log("cancelMarket" , cancelMarket)
+            const cancelOrdebook = this.orderBooks.find(o => o.ticker() === cancelMarket);
+            const quoteAsset = cancelMarket.split("_")[1];
+            console.log("quoteAsset" , quoteAsset)
+            if(!cancelOrdebook){
+              throw new Error("No orderbook found");
+            }
+        
+            const order  = cancelOrdebook.asks.find(o => o.orderId === orderId) || cancelOrdebook.bids.find(o => o.orderId === orderId);
+            if(!order){
+              throw new Error("no order found ")
+            }
+            if(order.side === "buy"){
+
+              const price = cancelOrdebook.cancelBid(order);
+              const leftQuantity = (order.quantity - order.filled)*order.price;
+              const userBalance = this.balances.get(order.userId)
+              if(userBalance?.[BASE_CURRENCY]?.available != undefined){
+                  userBalance[BASE_CURRENCY].available += leftQuantity;
+                  userBalance[BASE_CURRENCY].locked -= leftQuantity;
+              }
+              if(price){
+                this.sendUpdatedDepthAt(price.toString() , cancelMarket);
+              }
+
+            }else{
+              const price = cancelOrdebook.cancelAsk(order);
+              const leftQuantity = (order.quantity - order.filled);
+              const userBalance = this.balances.get(order.userId)
+
+              if(userBalance?.[quoteAsset]?.available != undefined){
+                userBalance[quoteAsset].available += leftQuantity;
+                userBalance[quoteAsset].locked -= leftQuantity;
+            }
+            if(price){
+              this.sendUpdatedDepthAt(price.toString() , cancelMarket);
+            }
+            }
+            RedisManager.getInstance().sendToApi(clientId ,{
+              type : "ORDER_CANCELLED",
+              payload : {
+                orderId,
+                executedQty : 0,
+                remainingQty : 0,
+              }
+            })
+
+
+          }catch(e){
+            console.log(e);
+            throw new Error("error ocurred while canceling the order")
+          }
+          break;
+          case GET_OPEN_ORDERS:
+            try{
+              const openOrder = this.orderBooks.find(o => o.ticker() === message.data.market);
+              if(!openOrder){
+                throw new Error("no open order found");
+              }
+              const openOrders = openOrder.getOpenOrders(message.data.userId);
+              RedisManager.getInstance().sendToApi(clientId , {
+                type : "OPEN_ORDERS",
+                payload  : openOrders
+              })
+            }catch(e){
+              console.log(e);
+              throw new Error("error occured cannot get open orders");
+            }
         
     }
   }

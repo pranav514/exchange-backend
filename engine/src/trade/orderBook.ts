@@ -158,8 +158,11 @@ export class OrderBook {
     }
 
     getOpenOrders(userId: string): Order[] {
+        console.log(userId)
         const asks = this.asks.filter(x => x.userId === userId);
+        console.log(asks)
         const bids = this.bids.filter(x => x.userId === userId);
+        console.log(bids)
         return [...asks, ...bids];
     }
 
