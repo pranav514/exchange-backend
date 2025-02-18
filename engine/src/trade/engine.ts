@@ -246,6 +246,12 @@ export class Engine {
     this.updateDbOrders(order, executedQty, fills, market);
     this.publisWsDepthUpdates(fills, price, side, market);
     this.publishWsTrades(fills, userId, market);
+  if (fills.length > 0) {
+  const latestFill = fills[fills.length - 1];
+  orderBook.currentPrice = Number(latestFill.price);
+  console.log("lastfillprice" , latestFill.price)
+  this.publishWsTicker(market);
+}
     return { executedQty, fills, orderId: order.orderId };
   }
 
@@ -348,6 +354,55 @@ export class Engine {
         },
       });
     });
+  }
+
+  publishWsTicker(market : string){
+    const orderbook = this.orderBooks.find(o => o.ticker() === market);
+    if(!orderbook){
+      throw new Error("order book not found");
+    }
+    const currentPrice = orderbook.currentPrice.toString();
+    console.log("currentPrice" , currentPrice);
+    const depth = orderbook.getDepth();
+    const bids = depth.bids || [];
+    const asks = depth.asks || [];
+    let highBid = currentPrice;
+    let lowAsk = currentPrice;
+    if(bids.length > 0){
+    const sortedBids = [...bids].sort((a, b) => parseFloat(b[0]) - parseFloat(a[0]));
+    highBid = sortedBids[0][0];
+    }
+    if(asks.length > 0){
+      const sortedAsks = [...asks].sort((a, b) => parseFloat(a[0]) - parseFloat(b[0]));
+      lowAsk  = sortedAsks[0][0];
+    }
+    console.log("highBid" , highBid);
+    console.log("lowAsks" ,lowAsk );
+    let baseVol = "0";
+    let quoteVol = "0";
+    const bidVolume = bids.reduce((sum, [_, qty]) => sum + parseFloat(qty), 0);
+    const askVolume = asks.reduce((sum, [_, qty]) => sum + parseFloat(qty), 0);
+    baseVol = (bidVolume + askVolume).toString();  
+    const bidQuoteVolume = bids.reduce((sum, [price, qty]) => sum + (parseFloat(price) * parseFloat(qty)), 0);
+  const askQuoteVolume = asks.reduce((sum, [price, qty]) => sum + (parseFloat(price) * parseFloat(qty)), 0);
+  quoteVol = (bidQuoteVolume + askQuoteVolume).toString();
+  console.log(baseVol);
+  console.log(quoteVol);
+  
+  RedisManager.getInstance().sendToWs(`ticker@${market}`,{
+    stream : `ticker@${market}`,
+    data : {
+      c : currentPrice,
+      h : highBid,
+      l : lowAsk,
+      v : baseVol,
+      V : quoteVol,
+      s : market,
+      id : Math.random(),
+      e : "ticker"
+
+    }
+  })
   }
 
   publishWsTrades(fills: Fill[], userId: string, market: string) {
