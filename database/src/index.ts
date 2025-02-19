@@ -26,6 +26,32 @@ async function  main() {
                 const values = [timestamp,price , volume];
                 await pgClient.query(query , values);
             }
+            if(data.type === "ORDER_UPDATE"){
+                console.log("handling order update");
+                console.log(data);
+                const query = `
+                    INSERT INTO order_updates(order_id , executed_qty , market , price , quantity , side)
+                    VALUES ($1 , $2 , $3 , $4 , $5 , $6) ON CONFLICT (order_id) DO UPDATE
+                    SET executed_qty = EXCLUDED.executed_qty, 
+                market = EXCLUDED.market, 
+                price = EXCLUDED.price, 
+                quantity = EXCLUDED.quantity, 
+                side = EXCLUDED.side;
+                `;
+                console.log(data.data.exceutedQty);
+                const values  = [
+                    data.data.orderId,
+                    data.data.exceutedQty,
+                    data.data.market || null,
+                    data.data.price || null,
+                    data.data.quantity || null,
+                    data.data.side || null,
+                ];
+                await pgClient.query(query , values);
+            }
+            
+            
+            
 
         }
     }
