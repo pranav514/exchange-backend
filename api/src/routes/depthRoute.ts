@@ -13,3 +13,5 @@ router.get('/' , async(req , res) => {
     }))
     res.json(response.payload);
 })
+
+export default router

@@ -6,6 +6,7 @@ import {
   BASE_CURRENCY,
   CANCEL_ORDER,
   CREATE_ORDER,
+  GET_DEPTH,
   GET_OPEN_ORDERS,
   ON_RAMP,
   ORDER_UPDATE,
@@ -183,6 +184,27 @@ export class Engine {
               }
             }))
             break;
+            case GET_DEPTH:
+              try{
+                const market = message.data.market;
+                const orderbook = this.orderBooks.find(o => o.ticker() === market);
+                if(!orderbook){
+                  throw new Error("orderbook not found");
+                }
+                RedisManager.getInstance().sendToApi(clientId , ({
+                  type : "DEPTH",
+                  payload : orderbook.getDepth()
+                }))
+              }catch(e){
+                console.log(e);
+                RedisManager.getInstance().sendToApi(clientId , ({
+                  type : "DEPTH",
+                  payload: {
+                    bids : [],
+                    asks : [],
+                  }
+                }))
+              }
         
     }
   }
