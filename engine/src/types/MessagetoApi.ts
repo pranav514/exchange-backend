@@ -28,4 +28,9 @@ export type MessageToApi = {
 } | {
     type: "OPEN_ORDERS",
     payload: Order[]
+} | {
+    type : "BALANCE_ADDED",
+    payload : {
+        balance  : string
+    }
 }

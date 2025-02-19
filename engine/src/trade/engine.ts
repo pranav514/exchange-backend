@@ -7,6 +7,7 @@ import {
   CANCEL_ORDER,
   CREATE_ORDER,
   GET_OPEN_ORDERS,
+  ON_RAMP,
   ORDER_UPDATE,
   TRADE_ADDED,
 } from "../types/constants";
@@ -167,6 +168,21 @@ export class Engine {
               console.log(e);
               throw new Error("error occured cannot get open orders");
             }
+            break;
+            case ON_RAMP:
+              console.log(message)
+            const userId = message.data.userId;
+            console.log("userId" , userId)
+            const amount = Number(message.data.amount);
+            console.log("amount" , amount);
+            const balance = this.onRamp(userId , amount )
+            RedisManager.getInstance().sendToApi(clientId , ({
+              type : "BALANCE_ADDED",
+              payload : {
+                balance: JSON.stringify(balance)
+              }
+            }))
+            break;
         
     }
   }
@@ -417,6 +433,32 @@ export class Engine {
       });
     });
   }
+  onRamp(userId: string, amount: number) {
+    let user_balance = this.balances.get(userId);
+    // console.log(user_balance)
+
+    if (!user_balance) {
+        user_balance = {
+            [BASE_CURRENCY]: {
+                available: amount,
+                locked: 0,
+            },
+            "TATA" : {
+              available : 100000,
+              locked : 0,
+            }
+        };
+
+        this.balances.set(userId, user_balance);
+        console.log(user_balance);
+
+      
+    } else {
+  
+        user_balance[BASE_CURRENCY].available += amount;
+    }
+    return user_balance
+}
 
   setBaseBalances() {
     this.balances.set("029b0e5a-d416-44f2-9be8-c0ad35c52598", {

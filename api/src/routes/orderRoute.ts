@@ -36,7 +36,7 @@ router.post('/' , authMiddleware,async (req , res) => {
 router.delete('/:id' , authMiddleware , async(req , res) => {
     try{
         const orderId = req.params.id;
-        const market =  req.body;
+        const market =  req.body.market;
         const response = await RedisManager.getInstance().sendAndAwait({
             type : CANCEL_ORDER,
             data : {
@@ -52,9 +52,9 @@ router.delete('/:id' , authMiddleware , async(req , res) => {
     }
 })
 
-router.get('/' , async (req , res) => {
+router.get('/' , authMiddleware,async (req , res) => {
     try{
-    const market  = req.body;
+    const market  = req.body.market;
     const userId = req.userId
     const response  = await RedisManager.getInstance().sendAndAwait({
         type : GET_OPEN_ORDERS,

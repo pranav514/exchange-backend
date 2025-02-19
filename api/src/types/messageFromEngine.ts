@@ -1,4 +1,4 @@
-import { DEPTH, OPEN_ORDERS, ORDER_CANCELLED, ORDER_PLACED, SIDE_BUY, SIDE_SELL } from "./constants";
+import { BALANCE_ADDED, DEPTH, OPEN_ORDERS, ORDER_CANCELLED, ORDER_PLACED, SIDE_BUY, SIDE_SELL } from "./constants";
 
 export type MessageFromEngine = {
     type: typeof DEPTH,
@@ -37,6 +37,11 @@ export type MessageFromEngine = {
        quantity : string,
        side : typeof SIDE_BUY | typeof SIDE_SELL,
        userId : string
+    }
+} | {
+    type : typeof BALANCE_ADDED ,
+    payload : {
+        balance : string
     }
 }
 
