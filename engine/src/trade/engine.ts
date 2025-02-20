@@ -241,6 +241,7 @@ export class Engine {
       userId,
     };
     const { fills, executedQty } = orderBook.addOrder(order);
+    console.log("executed Qunatity" , executedQty);
     this.updateBalance(userId, baseAsset, quoteAsset, side, fills, executedQty);
     this.createDbtrades(fills, market, userId);
     this.updateDbOrders(order, executedQty, fills, market);
@@ -488,6 +489,7 @@ export class Engine {
     fills: Fill[],
     market: string
   ) {
+    console.log("from the dborders" , executedQty);
     RedisManager.getInstance().pushMessage({
       type: ORDER_UPDATE,
       data: {
@@ -499,6 +501,7 @@ export class Engine {
         side: order.side,
       },
     });
+    
 
     fills.forEach((fill) => {
       RedisManager.getInstance().pushMessage({
